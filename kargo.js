@@ -94,7 +94,7 @@ window.headertag.partnerScopes.push(function() {
         };
     }
 
-    function getEncodedCrb() {
+    function getCrbIds() {
         try {
             var crb = JSON.parse(decodeURIComponent(readCookie('krg_crb'))),
                 syncIds = {};
@@ -107,14 +107,14 @@ window.headertag.partnerScopes.push(function() {
                 }
             }
 
-            return btoa(JSON.stringify(syncIds));
+            return syncIds;
         }
         catch (e) {
-            return '';
+            return {};
         }
     }
 
-    function getEncodedKid() {
+    function getUid() {
         try {
             var uid = JSON.parse(decodeURIComponent(readCookie('krg_uid'))),
                 vData = {};
@@ -123,23 +123,61 @@ window.headertag.partnerScopes.push(function() {
                 vData = uid.v;
             }
 
-            return btoa(JSON.stringify(vData));
+            return vData;
+        }
+        catch (e) {
+            return {};
+        }
+    }
+
+    function getKruxUserId() {
+        return getLocalStorageSafely('kxkar_user');
+    }
+
+    function getKruxSegments() {
+        return getLocalStorageSafely('kxkar_segs');
+    }
+
+    function getKrux() {
+        var segmentsStr = getKruxSegments(),
+            segments = [];
+
+        if (segmentsStr) {
+            segments = segmentsStr.split(',');
+        }
+
+        return {
+            userID: getKruxUserId(),
+            segments: segments
+        };
+    }
+
+    function getLocalStorageSafely(key) {
+        try {
+            return localStorage.getItem(key);
         }
         catch (e) {
             return '';
         }
     }
 
-    function getKargoIds() {
+    function getAllMetadata() {
         return {
-            crb: getEncodedCrb(),
-            kid: getEncodedKid()
+            userIDs: getUserIds(),
+            krux: getKrux(),
+            pageURL: window.location.href
         };
     }
 
-    function getAllMetadata() {
+    function getUserIds() {
+        var uid = getUid(),
+            crbIds = getCrbIds();
+
         return {
-            kargoIDs: getKargoIds()
+            kargoID: uid.userId,
+            clientID: uid.clientId,
+            crbIDs: crbIds,
+            optOut: uid.optOut
         };
     }
 
@@ -477,7 +515,7 @@ window.headertag.partnerScopes.push(function() {
         var targetingType = config.targetingType;
         var supportedAnalytics = SUPPORTED_ANALYTICS;
         var supportedOptions = SUPPORTED_OPTIONS;
-        
+
         var creativeStore = {};
 
         /* =============================================================================
