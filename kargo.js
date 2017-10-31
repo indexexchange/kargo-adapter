@@ -165,7 +165,8 @@ window.headertag.partnerScopes.push(function() {
         return {
             userIDs: getUserIds(),
             krux: getKrux(),
-            pageURL: window.location.href
+            pageURL: window.location.href,
+            rawCRB: readCookie('krg_crb')
         };
     }
 
