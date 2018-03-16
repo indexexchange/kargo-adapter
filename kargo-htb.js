@@ -40,11 +40,20 @@ var Whoopsie = require('whoopsie.js');
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Partner module template
+ * Kargo Header Tag Bidder module.
  *
  * @class
  */
 function KargoHtb(configs) {
+    /* Kargo endpoint only works with AJAX */
+    if (!Network.isXhrSupported()) {
+        //? if (DEBUG) {
+        Scribe.warn('Partner KargoHtb requires AJAX support. Aborting instantiation.');
+        //? }
+
+        return null;
+    }
+
     /* =====================================
      * Data
      * ---------------------------------- */
@@ -72,6 +81,78 @@ function KargoHtb(configs) {
 
     /* Utilities
      * ---------------------------------- */
+
+    function __getLocalStorageSafely(key) {
+        try {
+            return localStorage.getItem(key);
+        } catch (ex) {
+            return '';
+        }
+    }
+
+    function __getUid() {
+        var vData = {};
+
+        try {
+            var uid = JSON.parse(decodeURIComponent(Browser.readCookie('krg_uid')));
+
+            if (uid && uid.v) {
+                vData = uid.v;
+            }
+        } catch (ex) {
+            //? if (DEBUG) {
+            Scribe.error('Unable to get Uid for Kargo');
+            Scribe.error(ex);
+            //? }
+        }
+        return vData;
+    }
+
+    function __getCrbIds() {
+        var syncIds = {};
+        try {
+            var crb = JSON.parse(decodeURIComponent(Browser.readCookie('krg_crb')));
+
+            if (crb && crb.v) {
+                var vParsed = JSON.parse(atob(crb.v));
+
+                if (vParsed && vParsed.syncIds) {
+                    syncIds = vParsed.syncIds;
+                }
+            }
+        } catch (ex) {
+            //? if (DEBUG) {
+            Scribe.error('Unable to get Crb Ids for Kargo');
+            Scribe.error(ex);
+            //? }
+        }
+        return syncIds;
+    }
+
+    function __getUserIds() {
+        var uid = __getUid();
+
+        return {
+            kargoID: uid.userId || '',
+            clientID: uid.clientId || '',
+            crbIDs: __getCrbIds(),
+            optOut: uid.optOut || false
+        };
+    }
+
+    function __getKruxDmpData() {
+        var segmentsStr = __getLocalStorageSafely('kxkar_segs');
+        var segments = [];
+
+        if (segmentsStr) {
+            segments = segmentsStr.split(',');
+        }
+
+        return {
+            userID: __getLocalStorageSafely('kxkar_user'),
+            segments: segments
+        };
+    }
 
     /**
      * Generates the request URL and query data to the endpoint for the xSlots
@@ -141,21 +222,39 @@ function KargoHtb(configs) {
          */
 
         /* ---------------------- PUT CODE HERE ------------------------------------ */
-        var queryObj = {};
-        var callbackId = System.generateUniqueId();
 
         /* Change this to your bidder endpoint.*/
-        var baseUrl = Browser.getProtocol() + '//someAdapterEndpoint.com/bid';
+        var baseUrl = Browser.getProtocol() + '//krk.kargo.com/api/v1/bid';
 
         /* ---------------- Craft bid request using the above returnParcels --------- */
 
+        /* grab all requred adSlotIds */
+        var adSlotIds = [];
+        for (var i = 0; i < returnParcels.length; i++) {
+
+            /* If htSlot does not have an ixSlot mapping no impressions needed */
+            if (!returnParcels[i].hasOwnProperty('xSlotRef')) {
+                continue;
+            }
+            adSlotIds.push(returnParcels[i].xSlotRef.adSlotId);
+        }
+
+        /* craft json object for the bid request */
+        var json = {
+            adSlotIDs: adSlotIds,
+            userIDs: __getUserIds(),
+            krux: __getKruxDmpData(),
+            pageURL: Browser.getPageUrl(),
+            rawCRB: Browser.readCookie('krg_crb')
+        };
 
         /* -------------------------------------------------------------------------- */
 
         return {
             url: baseUrl,
-            data: queryObj,
-            callbackId: callbackId
+            data: {
+                json: JSON.stringify(json)
+            }
         };
     }
 
@@ -171,7 +270,9 @@ function KargoHtb(configs) {
      * callback type to CallbackTypes.CALLBACK_NAME and omit this function.
      */
     function adResponseCallback(adResponse) {
-        /* get callbackId from adResponse here */
+        /**
+         * OMITTING THIS FUNCTION DUE TO CALLBACK_NONE
+         */
         var callbackId = 0;
         __baseClass._adResponseStore[callbackId] = adResponse;
     }
@@ -184,17 +285,17 @@ function KargoHtb(configs) {
      * STEP 5  | Rendering Pixel
      * -----------------------------------------------------------------------------
      *
-    */
+     */
 
-     /**
+    /**
      * This function will render the pixel given.
      * @param  {string} pixelUrl Tracking pixel img url.
      */
     function __renderPixel(pixelUrl) {
-        if (pixelUrl){
+        if (pixelUrl) {
             Network.img({
                 url: decodeURIComponent(pixelUrl),
-                method: 'GET',
+                method: 'GET'
             });
         }
     }
@@ -236,7 +337,18 @@ function KargoHtb(configs) {
 
         /* ---------- Process adResponse and extract the bids into the bids array ------------*/
 
-        var bids = adResponse;
+        var bids = [];
+
+        for (var adSlotId in adResponse) {
+            if (!adResponse.hasOwnProperty(adSlotId)) {
+                continue;
+            }
+
+            bids.push({
+                adSlotId: adSlotId,
+                adSlotDemand: adResponse[adSlotId]
+            });
+        }
 
         /* --------------------------------------------------------------------------------- */
 
@@ -250,6 +362,7 @@ function KargoHtb(configs) {
             headerStatsInfo[htSlotId][curReturnParcel.requestId] = [curReturnParcel.xSlotName];
 
             var curBid;
+            var curAdSlotId;
 
             for (var i = 0; i < bids.length; i++) {
 
@@ -261,8 +374,9 @@ function KargoHtb(configs) {
                  */
 
                 /* ----------- Fill this out to find a matching bid for the current parcel ------------- */
-                if (curReturnParcel.xSlotRef.someCriteria === bids[i].someCriteria) {
-                    curBid = bids[i];
+                if (curReturnParcel.xSlotRef.adSlotId === bids[i].adSlotId) {
+                    curBid = bids[i].adSlotDemand;
+                    curAdSlotId = bids[i].adSlotId;
                     bids.splice(i, 1);
                     break;
                 }
@@ -283,10 +397,11 @@ function KargoHtb(configs) {
              * these local variables */
 
             /* the bid price for the given slot */
-            var bidPrice = curBid.price;
+            var bidPrice = curBid.cpm;
 
             /* the size of the given slot */
-            var bidSize = [Number(curBid.width), Number(curBid.height)];
+            var sizes = curBid.targetingPrefix.split(/x|_/).slice(0, 2);
+            var bidSize = [Number(sizes[0]), Number(sizes[1])];
 
             /* the creative/adm for the given slot that will be rendered if is the winner.
              * Please make sure the URL is decoded and ready to be document.written.
@@ -294,23 +409,22 @@ function KargoHtb(configs) {
             var bidCreative = curBid.adm;
 
             /* the dealId if applicable for this slot. */
-            var bidDealId = curBid.dealid;
+            var bidDealId = curBid.hasOwnProperty('targetingCustom') ? curBid.targetingCustom : null;
 
             /* explicitly pass */
             var bidIsPass = bidPrice <= 0 ? true : false;
 
             /* OPTIONAL: tracking pixel url to be fired AFTER rendering a winning creative.
-            * If firing a tracking pixel is not required or the pixel url is part of the adm,
-            * leave empty;
-            */
+             * If firing a tracking pixel is not required or the pixel url is part of the adm,
+             * leave empty;
+             */
             var pixelUrl = '';
 
             /* ---------------------------------------------------------------------------------------*/
 
-            curBid = null;
             if (bidIsPass) {
                 //? if (DEBUG) {
-                Scribe.info(__profile.partnerId + ' returned pass for { id: ' + adResponse.id + ' }.');
+                Scribe.info(__profile.partnerId + ' returned pass for { id: ' + curAdSlotId + ' }.');
                 //? }
                 if (__profile.enabledAnalytics.requestTime) {
                     __baseClass._emitStatsEvent(sessionId, 'hs_slot_pass', headerStatsInfo);
@@ -344,9 +458,6 @@ function KargoHtb(configs) {
 
             //? if (FEATURES.RETURN_CREATIVE) {
             curReturnParcel.adm = bidCreative;
-            if (pixelUrl) {
-                curReturnParcel.winNotice = __renderPixel.bind(null, pixelUrl);
-            }
             //? }
 
             //? if (FEATURES.RETURN_PRICE) {
@@ -359,8 +470,8 @@ function KargoHtb(configs) {
                 adm: bidCreative,
                 requestId: curReturnParcel.requestId,
                 size: curReturnParcel.size,
-                price: targetingCpm,
-                dealId: bidDealId || undefined,
+                price: targetingCpm ? targetingCpm : undefined,
+                dealId: bidDealId ? bidDealId : undefined,
                 timeOfExpiry: __profile.features.demandExpiry.enabled ? (__profile.features.demandExpiry.value + System.now()) : 0,
                 auxFn: __renderPixel,
                 auxArgs: [pixelUrl]
@@ -392,7 +503,7 @@ function KargoHtb(configs) {
             partnerId: 'KargoHtb', // PartnerName
             namespace: 'KargoHtb', // Should be same as partnerName
             statsId: 'KARG', // Unique partner identifier
-            version: '2.1.1',
+            version: '2.2.1',
             targetingType: 'slot',
             enabledAnalytics: {
                 requestTime: true
@@ -409,15 +520,15 @@ function KargoHtb(configs) {
             },
             targetingKeys: { // Targeting keys for demand, should follow format ix_{statsId}_id
                 id: 'ix_karg_id',
-                om: 'ix_karg_cpm',
-                pm: 'ix_karg_cpm',
-                pmid: 'ix_karg_dealid'
+                om: 'ix_karg_om',
+                pm: 'ix_karg_pm',
+                pmid: 'ix_karg_pmid'
             },
-            bidUnitInCents: 1, // The bid price unit (in cents) the endpoint returns, please refer to the readme for details
+            bidUnitInCents: 100, // The bid price unit (in cents) the endpoint returns, please refer to the readme for details
             lineItemType: Constants.LineItemTypes.ID_AND_SIZE,
-            callbackType: Partner.CallbackTypes.ID, // Callback type, please refer to the readme for details
+            callbackType: Partner.CallbackTypes.NONE, // Callback type, please refer to the readme for details
             architecture: Partner.Architectures.SRA, // Request architecture, please refer to the readme for details
-            requestType: Partner.RequestTypes.ANY // Request type, jsonp, ajax, or any.
+            requestType: Partner.RequestTypes.AJAX // Request type, jsonp, ajax, or any.
         };
         /* ---------------------------------------------------------------------------------------*/
 
