@@ -422,6 +422,8 @@ function KargoHtb(configs) {
 
             /* ---------------------------------------------------------------------------------------*/
 
+            curBid = null;
+
             if (bidIsPass) {
                 //? if (DEBUG) {
                 Scribe.info(__profile.partnerId + ' returned pass for { id: ' + curAdSlotId + ' }.');
