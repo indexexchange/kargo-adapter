@@ -241,7 +241,9 @@ function KargoHtb(configs) {
 
         /* craft json object for the bid request */
         var json = {
+            timeout: SpaceCamp.globalTimeout,
             adSlotIDs: adSlotIds,
+            timestamp: (new Date()).getTime(),
             userIDs: __getUserIds(),
             krux: __getKruxDmpData(),
             pageURL: Browser.getPageUrl(),
