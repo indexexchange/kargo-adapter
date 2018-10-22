@@ -134,7 +134,7 @@ Each parcel is an object in the following form:
 
 ```javascript
 {
-    "partnerId": "KRGO",
+    "partnerId": "KARG",
     "htSlot": {
       "__type__": "HeaderTagSlot"
     },
@@ -329,7 +329,7 @@ After filling out these objects, the resulting returnParcel objects should look 
 
 ```javascript
 {
-    "partnerId": "KRGO",
+    "partnerId": "KARG",
     "htSlot": {
       "__type__": "HeaderTagSlot"
     },
@@ -344,8 +344,8 @@ After filling out these objects, the resulting returnParcel objects should look 
     // notice these new fields with demand
     "targetingType": "slot"
     "targeting" : {
-        "ix_krgo_id": ["_230l09jd2"],
-        "ix_krgo_cpm": ["300x250_2.50"]
+        "ix_karg_id": ["_230l09jd2"],
+        "ix_karg_cpm": ["300x250_2.50"]
     },
     "price": 2.50,
     "size": [300,250],
